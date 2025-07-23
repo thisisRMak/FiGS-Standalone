@@ -104,14 +104,14 @@ class VehicleRateMPC(BaseController):
 
         if type(course) is str:
             # Solve Padded Trajectory
-            start_time = time.time()
+            # start_time = time.time()
             output = ms.solve(traj_config_pd)
             if output is not False:
                 Tpi, CPi = output
             else:
                 raise ValueError("Padded trajectory (for VehicleRateMPC) not feasible. Aborting.")
-            finish_time = time.time()
-            print(f"Time to solve trajectory: {finish_time-start_time:.6f} seconds")
+            # finish_time = time.time()
+            # print(f"Time to solve trajectory: {finish_time-start_time:.6f} seconds")
             # Convert to desired tXU
             tXUd = th.TS_to_tXU(Tpi,CPi,drn_spec,hz_ctl)
         else:

@@ -16,6 +16,177 @@ from figs.tsampling.rrt_datagen_v10 import *
 
 import numpy as np
 
+
+
+def generate_spin_keyframes(
+    name: str,
+    Nco: int,
+    xyz: np.ndarray,
+    theta0: float,
+    theta1: float,
+    time: float,
+    N: int = 70
+) -> dict:
+    """
+    Spin in place from theta0→theta1 (shortest arc) + 360°,
+    constant-rate implied by uniform spacing of keyframes,
+    but derivatives left unconstrained except at endpoints.
+    Produces N+1 keyframes (including start/end).
+    """
+    # 1) shortest signed Δθ
+    dθ        = ((theta1 - theta0 + np.pi) % (2*np.pi)) - np.pi
+    direction = np.sign(dθ) if dθ != 0 else 1.0
+    abs_dθ    = abs(dθ)
+
+    # 2) total angular distance
+    total_ang = abs_dθ + 2*np.pi
+
+    rate = (abs_dθ + 2*np.pi) / time  # angular velocity
+
+    def make_fo(angle: float, 
+                #rate: float, 
+                # is_buffer: bool, 
+                is_intermediate: bool):
+        fo = []
+        for idx, val in enumerate((*xyz, angle)):
+            if idx < 3:
+                if is_intermediate:
+                    fo.append([val, None, None])
+                # elif is_buffer:
+                #     fo.append([val, 
+                #                None, None])
+                else:
+                    fo.append([val, 0.0])
+            else:
+                if is_intermediate:
+                    fo.append([val, None, None])
+                # elif is_buffer:
+                #     fo.append([val, 
+                #                None, None])
+                else:
+                    fo.append([val, rate])
+        return fo
+
+    # 4) build dense keyframes
+    keyframes = {}
+    for k in range(N+1):
+        frac           = k / N
+        t_k            = frac * time
+        θ_k            = theta0 + direction * frac * total_ang
+        is_end         = (k == 0 or k == N)
+        is_buffer      = (k == 1 or k == N-1)
+        is_intermediate= not (is_end or is_buffer)
+
+        keyframes[f"fo{k}"] = {
+            "t": t_k,
+            "fo": make_fo(
+                θ_k,
+                # ω,
+                # is_buffer=is_buffer,
+                is_intermediate = not is_end
+            )
+        }
+
+    return {"name": name, "Nco": Nco, "keyframes": keyframes}
+
+# def generate_spin_keyframes(
+#     name: str,
+#     Nco: int,
+#     xyz: np.ndarray,
+#     theta0: float,
+#     theta1: float,
+#     time: float,
+# ) -> dict:
+#     """
+#     Auto-generate a JSON-style dict of keyframes that:
+#       • stays at position xyz,
+#       • rotates from theta0 → theta1 via the shortest path,
+#       • then continues a full 360° in the same direction back to theta1.
+
+#     Args:
+#       name   – trajectory name (e.g. "scan_spin")
+#       Nco    – number of polynomial coefficients
+#       xyz    – length-3 array [x,y,z] constant through the scan
+#       theta0 – start angle in radians
+#       theta1 – target angle in radians
+#       t1     – time at which we reach theta1
+#       t2     – time at which we finish full 360° back to theta1
+
+#     Returns:
+#       A dict exactly in your expected format.
+
+#     Example Usage:
+#      traj = generate_spin_keyframes(
+#          name="scan_spin",
+#          Nco=6,
+#          xyz=np.array([1.0, 2.0, 0.5]),
+#          theta0=   np.deg2rad(  30),
+#          theta1=   np.deg2rad( 150),
+#          t1=5.0,
+#          t2=15.0
+#      )
+#     """
+#     # 1) shortest signed delta θ in (−π,π]
+#     dθ = ((theta1 - theta0 + np.pi) % (2*np.pi)) - np.pi
+#     direction = np.sign(dθ) if dθ != 0 else 1.0
+#     abs_dθ = abs(dθ)
+
+#     θ_mid_1 = theta0 + dθ
+#     θ_mid_2 = θ_mid_1 + direction * np.pi  # 180° from θ_mid_1
+#     θ_end = θ_mid_1 + direction * 2*np.pi
+
+#     # 2) set the times between the keyframes
+#     total_ang = abs_dθ + 2*np.pi
+#     t1 = (abs_dθ / total_ang) * time
+#     t2 = ((abs_dθ + np.pi) / total_ang) * time
+#     t3 = time
+
+#     ω = total_ang / time
+#     ω_signed = ω * direction        # include sign of rotation
+#     # helper: build the 4×3 "fo" array
+#     def make_fo(
+#         x_val: float,
+#         y_val: float,
+#         z_val: float,
+#         θ_val: float,
+#         is_intermediate: bool,
+#         ω_signed: float
+#     ):
+#         """
+#         Build 4×3 fo.  
+#         • x,y,z rows: unchanged (None or 0.0)  
+#         • θ row:  ω_signed only on intermediate knots, zero at start/end.
+#         """
+#         fo = []
+#         for idx, val in enumerate((x_val, y_val, z_val, θ_val)):
+#             if idx < 3:
+#                 # x,y,z as before
+#                 if is_intermediate:
+#                     fo.append([val, None, None])
+#                 else:
+#                     fo.append([val, 0.0, 0.0])
+#             else:
+#                 # θ-row: velocity = ω_signed only if intermediate
+#                 if is_intermediate:
+#                     # fix velocity to ω, but leave acceleration free so it can ramp
+#                     fo.append([val, ω_signed, None])
+#                 else:
+#                     # endpoints start/end at rest
+#                     fo.append([val, 0.0,       0.0])
+#         return fo
+
+#     return {
+#         "name": name,
+#         "Nco":  Nco,
+#         "keyframes": {
+#             "fo0": { "t": 0.0,          "fo": make_fo(*xyz, theta0, False, ω_signed) },
+#             "fo1": { "t": t1,           "fo": make_fo(*xyz, θ_mid_1,    True,  ω_signed) },
+#             "fo2": { "t": t2,           "fo": make_fo(*xyz, θ_mid_2,    True,  ω_signed) },
+#             "fo3": { "t": time,   "fo": make_fo(*xyz, θ_end,    False, ω_signed) },
+#         }
+#     }
+
+
 def filter_branches(paths, top_k=1, hover_mode=False, verbose=False):
     """
     Filters branches by hover-mode + adjacency, computes furthest reach, then
@@ -128,149 +299,6 @@ def filter_branches(paths, top_k=1, hover_mode=False, verbose=False):
     final_branches = [prefiltered[i] for i in selected]
     log(f"\nFinal selected indices: {selected}")
     return final_branches
-
-# def filter_branches(paths, top_k=1, hover_mode=False):
-#     """
-#     Verbose version of filter_branches:
-#       1) Hover‐mode pruning (radius=1.5) if requested.
-#       2) Adjacency pruning (drop any point <0.25 from previous).
-#       3) Discard branches with fewer than skip_nodes after each step.
-#       4) Compute each branch’s furthest distance from its start and the (x,y) of that farthest point.
-#       5) Sort by descending distance, then greedily pick top_k branches while maximizing
-#          the minimum (x,y) separation among chosen branches.
-    
-#     Extensive printouts at each step help you see exactly why branches get dropped/selected.
-#     """
-#     skip_nodes = 2
-#     prefiltered = []
-
-#     print("=== Stage 1: Initial pruning ===")
-#     for branch_idx, positions in enumerate(paths):
-#         positions = np.asarray(positions)
-#         orig_len = positions.shape[0]
-#         print(f"\nBranch {branch_idx}: original length = {orig_len}")
-
-#         # (a) Hover‐mode in‐radius filter (if requested)
-#         if hover_mode:
-#             radius = 1.5
-#             kept = [positions[0]]
-#             for p in positions[1:]:
-#                 if np.linalg.norm(p - kept[0]) <= radius:
-#                     kept.append(p)
-#             positions = np.array(kept)
-#             after_hover_len = positions.shape[0]
-#             print(f"  After hover‐mode pruning (radius 1.5): length = {after_hover_len}")
-#             if after_hover_len < skip_nodes:
-#                 print(f"    → Dropped: fewer than {skip_nodes} nodes after hover‐mode.")
-#                 continue
-#         else:
-#             print("  (Skipping hover‐mode pruning)")
-
-#         # (b) Adjacency filter: drop any point closer than 0.25 to the previous kept point
-#         pruned = [positions[0]]
-#         for p in positions[1:]:
-#             if np.linalg.norm(p - pruned[-1]) >= 0.25:
-#                 pruned.append(p)
-#         pruned = np.array(pruned)
-#         after_adj_len = pruned.shape[0]
-#         print(f"  After adjacency pruning (≥ 0.25 apart): length = {after_adj_len}")
-#         if after_adj_len < skip_nodes:
-#             print(f"    → Dropped: fewer than {skip_nodes} nodes after adjacency pruning.")
-#             continue
-
-#         print(f"  → Keeping branch {branch_idx}, final pruned length = {after_adj_len}")
-#         prefiltered.append(pruned)
-
-#     print("\n=== Stage 2: Summary of prefiltered branches ===")
-#     num_pref = len(prefiltered)
-#     print(f"Number of branches that survived initial pruning: {num_pref}/{len(paths)}")
-#     if num_pref == 0:
-#         print("No branches remain. Returning []")
-#         return []
-
-#     # Compute each branch’s furthest distance and record the (x,y) of that farthest point
-#     print("\n=== Stage 3: Computing furthest distances ===")
-#     L = num_pref
-#     furthest_dists = np.zeros(L)
-#     furthest_pts   = np.zeros((L, 2))  # store only x,y of the farthest point
-
-#     for i, branch in enumerate(prefiltered):
-#         diffs = branch - branch[0]                # shape (Ni, dim)
-#         norms = np.linalg.norm(diffs, axis=1)     # shape (Ni,)
-#         idx_max = np.argmax(norms)                # index of the farthest‐away point
-#         furthest_dists[i] = norms[idx_max]
-#         furthest_pts[i]   = branch[idx_max][:2]   # only (x,y)
-
-#         print(
-#             f"  Prefiltered-index {i}: "
-#             f"furthest_dist = {furthest_dists[i]:.4f}, "
-#             f"farthest_pt(x,y) = ({furthest_pts[i,0]:.3f}, {furthest_pts[i,1]:.3f}), "
-#             f"branch length = {branch.shape[0]}"
-#         )
-
-#     # Sort branch‐indices by descending furthest distance
-#     sorted_idxs = np.argsort(furthest_dists)[::-1]
-#     print("\n=== Stage 4: Sorting by furthest distance (desc) ===")
-#     for rank, idx in enumerate(sorted_idxs):
-#         print(f"  Rank {rank+1}: prefiltered[{idx}] with distance {furthest_dists[idx]:.4f}")
-
-#     # Greedy selection of top_k, ensuring x,y spread
-#     print("\n=== Stage 5: Greedy selection of top_k with spatial spread ===")
-#     selected = []
-
-#     if top_k <= 0:
-#         print("top_k <= 0, returning empty list.")
-#         return []
-
-#     # 5a) Pick the branch with the absolute largest distance first
-#     first_idx = sorted_idxs[0]
-#     selected.append(first_idx)
-#     print(f"  Step 1: Selected index {first_idx} (distance {furthest_dists[first_idx]:.4f})")
-
-#     # 5b) Build list of remaining candidates
-#     remaining = sorted_idxs.tolist()[1:]
-#     print(f"  Remaining candidates after first pick: {remaining}")
-
-#     # 5c) Iteratively pick the next-best candidate until we have top_k or run out
-#     while len(selected) < top_k and remaining:
-#         best_idx = None
-#         best_min_dist = -1.0
-
-#         print(f"\n  Looking for selection #{len(selected)+1} out of top_k={top_k}")
-#         for r in remaining:
-#             # Compute distances from candidate r’s farthest‐pt to every already‐selected farthest‐pt
-#             dists_to_selected = np.linalg.norm(
-#                 furthest_pts[r] - furthest_pts[selected], axis=1
-#             )
-#             min_to_selected = np.min(dists_to_selected)
-
-#             print(
-#                 f"    Candidate {r}: furthest_dist = {furthest_dists[r]:.4f}, "
-#                 f"min distance in (x,y) to already‐selected = {min_to_selected:.4f}"
-#             )
-
-#             if min_to_selected > best_min_dist:
-#                 best_min_dist = min_to_selected
-#                 best_idx = r
-
-#         # Add best_idx to selected, remove from remaining
-#         if best_idx is not None:
-#             selected.append(best_idx)
-#             remaining.remove(best_idx)
-#             print(
-#                 f"  → Selected {best_idx} next (min distance {best_min_dist:.4f} to selected set)"
-#             )
-#             print(f"  Now selected = {selected}")
-#             print(f"  Remaining = {remaining}")
-#         else:
-#             # No valid best found (shouldn’t really happen if remaining isn’t empty), break out
-#             print("  No valid candidate found. Breaking.")
-#             break
-
-#     # Build final return list in the order they were selected
-#     final_branches = [prefiltered[i] for i in selected]
-#     print(f"\nFinal selected branches (indices into prefiltered): {selected}")
-#     return final_branches
 
 def filter_branches_just_distance(paths, top_k=1, hover_mode=False):
     """
@@ -501,98 +529,6 @@ def process_RRT_objectives(
 
     log("\nFinished processing all objects.")
     return new_obj_targets, object_centroid
-# def process_RRT_objectives(obj_targets, epcds_arr, env_bounds, radii, altitudes, hoverMode=False, verbose=False):
-#     """
-#     Process the object targets and return updated obj_targets and obj_centroid,
-#     with detailed printouts of free_pts extents and bound-rejection reasons.
-#     """
-#     new_obj_targets = obj_targets.copy()
-#     object_centroid = []
-    
-#     for i, obj in enumerate(obj_targets):
-#         print(f"\n--- Processing object {i} ---")
-#         r1, r2 = radii[i]
-#         objctr = obj.flatten()
-#         print(f" Centroid: {objctr}, r1={r1:.3f}, r2={r2:.3f}")
-#         object_centroid.append(objctr)
-
-#         # Sample circle around centroid
-#         theta = np.linspace(0, 2*np.pi, 100)
-#         z_vals = np.full_like(theta, altitudes[i])
-#         circle_pts = np.vstack([
-#             objctr[0] + r1*np.cos(theta),
-#             objctr[1] + r1*np.sin(theta),
-#             z_vals
-#         ]).T
-
-#         # Find free points (no obstacle within r2)
-#         kdtree = cKDTree(epcds_arr.T)
-#         free_pts = [p for p in circle_pts
-#                     if not kdtree.query_ball_point(p, r2, eps=0.05, workers=-1)]
-#         print(f" Found {len(free_pts)} free_pts (no obstacles within r2)")
-
-#         if not free_pts:
-#             print("  → No free_pts found. Try reducing r2 or r1.")
-#             continue
-
-#         # Compute and print extents of free_pts
-#         arr = np.array(free_pts)
-#         x_min, x_max = arr[:,0].min(), arr[:,0].max()
-#         y_min, y_max = arr[:,1].min(), arr[:,1].max()
-#         z_min, z_max = arr[:,2].min(), arr[:,2].max()
-#         print(f"  free_pts extents:")
-#         print(f"    x ∈ [{x_min:.3f}, {x_max:.3f}], y ∈ [{y_min:.3f}, {y_max:.3f}], z ∈ [{z_min:.3f}, {z_max:.3f}]")
-
-#         # Print environment bounds
-#         minb = env_bounds["minbound"]
-#         maxb = env_bounds["maxbound"]
-#         print(f"  env_bounds:")
-#         print(f"    x ∈ [{minb[0]:.3f}, {maxb[0]:.3f}], "
-#               f"y ∈ [{minb[1]:.3f}, {maxb[1]:.3f}], "
-#               f"z ∈ [{minb[2]:.3f}, {maxb[2]:.3f}]")
-
-#         # Count why points are out of bounds
-#         x_low  = np.sum(arr[:,0] < minb[0])
-#         x_high = np.sum(arr[:,0] > maxb[0])
-#         y_low  = np.sum(arr[:,1] < minb[1])
-#         y_high = np.sum(arr[:,1] > maxb[1])
-#         z_low  = np.sum(arr[:,2] < minb[2])
-#         z_high = np.sum(arr[:,2] > maxb[2])
-#         total_out = x_low + x_high + y_low + y_high + z_low + z_high
-#         if total_out > 0:
-#             print("  Rejection summary (out-of-bounds counts):")
-#             if x_low:  print(f"    {x_low} pts with x < {minb[0]:.3f}")
-#             if x_high: print(f"    {x_high} pts with x > {maxb[0]:.3f}")
-#             if y_low:  print(f"    {y_low} pts with y < {minb[1]:.3f}")
-#             if y_high: print(f"    {y_high} pts with y > {maxb[1]:.3f}")
-#             if z_low:  print(f"    {z_low} pts with z < {minb[2]:.3f}")
-#             if z_high: print(f"    {z_high} pts with z > {maxb[2]:.3f}")
-#         else:
-#             print("  No free_pts are out-of-bounds in any axis.")
-
-#         # Filter to in-bounds
-#         in_bounds = [
-#             p for p in free_pts
-#             if (minb[0] <= p[0] <= maxb[0] and
-#                 minb[1] <= p[1] <= maxb[1] and
-#                 minb[2] <= p[2] <= maxb[2])
-#         ]
-#         print(f" {len(in_bounds)} points remain inside env bounds")
-
-#         if not in_bounds:
-#             print("  → All free_pts were out-of-bounds; consider:")
-#             print("     * increasing env_bounds or")
-#             print("     * decreasing r1 to sample closer to centroid\n")
-#             continue
-
-#         # Choose the candidate closest to the scene origin 
-#         new_pos = min(in_bounds, key=lambda p: np.linalg.norm(p))
-#         print(f"  → Selected new target: {new_pos}")
-
-#         new_obj_targets[i] = new_pos
-
-#     print("\nFinished processing all objects.")
-#     return new_obj_targets, object_centroid
 
 def process_RRT_objectives_loiter(
     obj_targets,
