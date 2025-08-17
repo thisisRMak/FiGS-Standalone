@@ -344,6 +344,9 @@ class Simulator:
                 k = i//n_sim2ctl
 
                 if query is not None:
+                    # if isinstance(icr, tuple):
+                    #     for idx, item in enumerate(icr):
+                    #         print(f"icr[{idx}] type: {type(item)}, shape: {getattr(item, 'shape', 'N/A')}")
                     Imgs_sem[k,:,:,:] = icr
                     Imgs_rgb[k,:,:,:] = icr_rgb
                     Imgs_depth[k,:,:,:] = icr_depth                

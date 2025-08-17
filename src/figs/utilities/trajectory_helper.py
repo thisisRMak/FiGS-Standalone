@@ -1309,7 +1309,7 @@ def process_branch(branch_id, positions, dt, constant_velocity, obj_loc, pad_t, 
         smooth_trajectory = smooth_trajectory.T
         return smooth_trajectory, common_time_position_orientation_pairs, None
     
-def parameterize_RRT_trajectories(branches, obj_loc, constant_velocity, sampling_frequency, randint=None, loiter=False):
+def parameterize_RRT_trajectories(branches, obj_loc, constant_velocity, sampling_frequency, randint=None):
     #NOTE True to plot a single trajectory, False for normal (generate data) use
     if randint is not None:
         print(f"randint is set to {randint}. Visualizing only this branch.")
@@ -1335,12 +1335,12 @@ def parameterize_RRT_trajectories(branches, obj_loc, constant_velocity, sampling
             viz=viz,
             threshold_distance=1.5,
             randint=randint,
-            loiter=loiter
+            # loiter=loiter
             )
         if result[0] is None and result[1] is None and result[2] is None:
             print(f"Breaking out of the loop. Branch {idbr} returned None.")
             continue  # Continue the loop
-        elif viz and (randint == idbr or loiter == True):
+        elif viz and (randint == idbr):
             new_branches.append(result[0])
             nodes_RRT.append(result[1])
             debug_dict = result[2]
