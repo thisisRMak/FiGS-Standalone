@@ -288,7 +288,7 @@ class Simulator:
                     icr_rgb = image_dict["rgb"]
                     icr_depth = image_dict["depth"]
                     start = time.time()
-                    icr = clipseg.clipseg_hf_inference(image=icr_rgb, prompt=query)
+                    icr, _ = clipseg.clipseg_hf_inference(image=icr_rgb, prompt=query)
                     end = time.time()
                     if verbose:
                         times.append(end-start)
@@ -299,7 +299,7 @@ class Simulator:
                     icr_depth = image_dict["depth"]
 
                     if validation:
-                        icr_val = clipseg.clipseg_hf_inference(image=icr_rgb, prompt=query)
+                        icr_val, _ = clipseg.clipseg_hf_inference(image=icr_rgb, prompt=query)
                 else:
                     image_dict = self.gsplat.render_rgb(camera,T_c2w)
                     icr = image_dict["rgb"]
