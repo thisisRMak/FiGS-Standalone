@@ -1521,6 +1521,74 @@ def visualize_multiple_trajectories(debug_info_list, pcd, obj_target, radius_inf
                 legendgroup=f"traj_{i}",
                 visible=True if i < 5 else 'legendonly'  # Show first 5, hide rest in legend
             ))
+            
+            # Add target direction arrows for smoothed trajectory
+            # Sample every Nth point to avoid cluttering (adjust sampling based on trajectory length)
+            n_points = len(smooth_positions)
+            step_size = max(1, n_points // 10)  # Show roughly 10 arrows per trajectory
+            sampled_indices = range(0, n_points, step_size)
+            
+            # Prepare arrow data for target direction
+            arrow_starts_x, arrow_starts_y, arrow_starts_z = [], [], []
+            arrow_ends_x, arrow_ends_y, arrow_ends_z = [], [], []
+            
+            obj_loc_flat = np.array(obj_loc).flatten()
+            
+            for idx in sampled_indices:
+                pos = smooth_positions[idx]
+                # Calculate direction vector from current position to target
+                target_dir = obj_loc_flat - pos
+                target_dir_norm = np.linalg.norm(target_dir)
+                
+                if target_dir_norm > 1e-6:  # Avoid division by zero
+                    # Normalize and scale the arrow (make arrows a reasonable size)
+                    arrow_length = min(0.3, target_dir_norm * 0.1)  # Scale based on distance but cap at 0.3m
+                    target_dir_normalized = target_dir / target_dir_norm * arrow_length
+                    
+                    # Arrow start point
+                    arrow_starts_x.append(pos[0])
+                    arrow_starts_y.append(pos[1])
+                    arrow_starts_z.append(pos[2])
+                    
+                    # Arrow end point
+                    arrow_ends_x.append(pos[0] + target_dir_normalized[0])
+                    arrow_ends_y.append(pos[1] + target_dir_normalized[1])
+                    arrow_ends_z.append(pos[2] + target_dir_normalized[2])
+            
+            # Add target direction arrows as lines with arrow markers
+            if arrow_starts_x:  # Only add if we have arrow data
+                # Create line segments for arrows
+                arrow_x, arrow_y, arrow_z = [], [], []
+                for start_x, start_y, start_z, end_x, end_y, end_z in zip(
+                    arrow_starts_x, arrow_starts_y, arrow_starts_z,
+                    arrow_ends_x, arrow_ends_y, arrow_ends_z
+                ):
+                    arrow_x.extend([start_x, end_x, None])  # None creates break between segments
+                    arrow_y.extend([start_y, end_y, None])
+                    arrow_z.extend([start_z, end_z, None])
+                
+                fig.add_trace(go.Scatter3d(
+                    x=arrow_x, y=arrow_y, z=arrow_z,
+                    mode="lines",
+                    line=dict(color=traj_color, width=3),
+                    name=f"{traj_name} (Target Dir)",
+                    showlegend=True,
+                    legendgroup=f"traj_{i}",
+                    visible=True if i < 5 else 'legendonly',
+                    opacity=0.8
+                ))
+                
+                # Add arrowheads as scatter points at the end of each arrow
+                fig.add_trace(go.Scatter3d(
+                    x=arrow_ends_x, y=arrow_ends_y, z=arrow_ends_z,
+                    mode="markers",
+                    marker=dict(size=4, color=traj_color, symbol='diamond'),
+                    name=f"{traj_name} (Arrow Heads)",
+                    showlegend=False,  # Don't show in legend to avoid clutter
+                    legendgroup=f"traj_{i}",
+                    visible=True if i < 5 else 'legendonly',
+                    opacity=0.8
+                ))
 
     # Add radius circles if provided
     if radius_info:
