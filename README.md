@@ -19,6 +19,10 @@ git submodule update --recursive --init
 ```bash
 bash install.sh
 ```
+If using a server:
+```bash
+bash install-serverside.sh
+```
 
 ### What's Included
 - Python 3.10 with numpy 1.26.4
