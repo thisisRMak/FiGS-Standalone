@@ -170,6 +170,10 @@ else
         cd acados
         # Initialize acados's own submodules (blasfeo, hpipm, qpoases, etc.)
         git submodule update --init --recursive
+        # Add build artifacts to .gitignore to avoid untracked content warnings
+        if ! grep -q "^build/" .gitignore 2>/dev/null; then
+            echo "build/" >> .gitignore
+        fi
         mkdir -p build
         cd build
         cmake -DACADOS_WITH_QPOASES=ON ..
