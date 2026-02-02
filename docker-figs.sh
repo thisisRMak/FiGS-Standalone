@@ -26,6 +26,7 @@ Commands:
   build [--gsplat VERSION]   Build the Docker image
   run [command]              Run interactive container (or execute command)
   shell                      Alias for 'run' with bash shell
+  reset                      Remove the container (installs will be lost)
 
 Build Options:
   --gsplat VERSION      Set gsplat version (default: ${GSPLAT_VERSION})
@@ -41,7 +42,8 @@ Examples:
 Volume Mounts:
   - ${WORKSPACE_DIR}/FiGS-Standalone -> /workspace/FiGS-Standalone
   - ${WORKSPACE_DIR}/coverage_view_selection -> /workspace/coverage_view_selection
-  - ~/.cache -> /home/user/.cache
+  - ~/.cache/torch -> /root/.cache/torch (for model downloads)
+  - ~/.cache/huggingface -> /root/.cache/huggingface (for HF models)
 
 First-time setup inside container:
   cd /workspace/FiGS-Standalone && pip install -e . --no-deps
@@ -95,22 +97,41 @@ build_image() {
 
 run_container() {
     local cmd="${@:-/bin/bash -l}"
+    local container_name="figs-dev"
 
-    echo "Starting FiGS container..."
+    # Check if container already exists
+    if docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
+        if docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
+            echo "Attaching to running FiGS container..."
+            docker exec -it "${container_name}" ${cmd}
+        else
+            echo "Starting existing FiGS container..."
+            docker start -ai "${container_name}"
+        fi
+    else
+        echo "Creating new FiGS container..."
+        # Run as root inside container for simplicity (development use)
+        docker run --gpus all \
+            --name "${container_name}" \
+            -v "${WORKSPACE_DIR}/FiGS-Standalone:/workspace/FiGS-Standalone" \
+            -v "${WORKSPACE_DIR}/coverage_view_selection:/workspace/coverage_view_selection" \
+            -v "/media/admin/data/StanfordMSL/nerf_data/amber/3dgs:/workspace/FiGS-Standalone/3dgs" \
+            -v "${HOME}/.cache/torch:/root/.cache/torch" \
+            -v "${HOME}/.cache/huggingface:/root/.cache/huggingface" \
+            -p 7007:7007 \
+            -it \
+            --shm-size=12gb \
+            -w /workspace \
+            -e PIP_ROOT_USER_ACTION=ignore \
+            "${IMAGE_NAME}:${IMAGE_TAG}" \
+            ${cmd}
+    fi
+}
 
-    docker run --gpus all \
-        -u "$(id -u):$(id -g)" \
-        -v "${WORKSPACE_DIR}/FiGS-Standalone:/workspace/FiGS-Standalone" \
-        -v "${WORKSPACE_DIR}/coverage_view_selection:/workspace/coverage_view_selection" \
-        -v "${HOME}/.cache:/home/user/.cache" \
-        -p 7007:7007 \
-        --rm \
-        -it \
-        --shm-size=12gb \
-        -e HOME=/workspace \
-        -w /workspace \
-        "${IMAGE_NAME}:${IMAGE_TAG}" \
-        ${cmd}
+reset_container() {
+    local container_name="figs-dev"
+    echo "Removing FiGS container (will be recreated on next run)..."
+    docker rm -f "${container_name}" 2>/dev/null || echo "No container to remove"
 }
 
 # Main
@@ -122,6 +143,9 @@ case "${1:-}" in
     run|shell)
         shift
         run_container "$@"
+        ;;
+    reset)
+        reset_container
         ;;
     -h|--help|help|"")
         show_help

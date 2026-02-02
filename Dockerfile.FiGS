@@ -20,16 +20,16 @@ ARG NERFSTUDIO_VERSION=""
 
 # === SOURCE STAGE ===
 # Pull nerfstudio source either from local copy or git
-FROM scratch as source_copy
+FROM scratch AS source_copy
 ONBUILD COPY . /tmp/nerfstudio
-FROM alpine/git as source_no_copy
+FROM alpine/git AS source_no_copy
 ARG NERFSTUDIO_VERSION
 ONBUILD RUN git clone --branch ${NERFSTUDIO_VERSION} --recursive https://github.com/nerfstudio-project/nerfstudio.git /tmp/nerfstudio
 ARG NERFSTUDIO_VERSION
-FROM source_${NERFSTUDIO_VERSION:+no_}copy as source
+FROM source_${NERFSTUDIO_VERSION:+no_}copy AS source
 
 # === BUILDER STAGE ===
-FROM nvidia/cuda:${NVIDIA_CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION} as builder
+FROM nvidia/cuda:${NVIDIA_CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION} AS builder
 ARG CUDA_ARCHITECTURES
 ARG NVIDIA_CUDA_VERSION
 ARG UBUNTU_VERSION
@@ -109,36 +109,42 @@ RUN pip install --no-cache-dir --upgrade pip 'setuptools<70.0.0' && \
         numpy==1.26.4 \
         --extra-index-url https://download.pytorch.org/whl/cu118
 
-# Hierarchical-Localization (same as official)
-RUN git clone --branch master --recursive https://github.com/cvg/Hierarchical-Localization.git /opt/hloc && \
-    cd /opt/hloc && git checkout v1.4 && \
+# Hierarchical-Localization with SuperGlue
+# Using commit 936040e8 which has pycolmap 0.6.x compatibility (before 3.12+ requirement)
+RUN git clone --recursive https://github.com/cvg/Hierarchical-Localization.git /opt/hloc && \
+    cd /opt/hloc && git checkout 936040e8d67244cc6c8c9d1667701f3ce87bf075 && \
+    git submodule update --init --recursive && \
     python3.10 -m pip install --no-cache-dir . && \
-    cd ~ && rm -rf /opt/hloc/.git
+    # Keep SuperGlue and add to Python path
+    cp -r /opt/hloc/third_party/SuperGluePretrainedNetwork /usr/local/lib/python3.10/dist-packages/ && \
+    rm -rf /opt/hloc
 
-# tiny-cuda-nn (same as official)
-RUN TCNN_CUDA_ARCHITECTURES="${CUDA_ARCHITECTURES}" \
-    pip install --no-cache-dir \
+# tiny-cuda-nn (requires --no-build-isolation to see installed torch)
+RUN pip install --no-cache-dir ninja && \
+    TCNN_CUDA_ARCHITECTURES="${CUDA_ARCHITECTURES}" \
+    pip install --no-cache-dir --no-build-isolation \
     "git+https://github.com/NVlabs/tiny-cuda-nn.git@b3473c81396fe927293bdfd5a6be32df8769927c#subdirectory=bindings/torch"
 
 # Additional Python deps (same as official)
 RUN pip install --no-cache-dir pycolmap==0.6.1 pyceres==2.1 omegaconf==2.3.0
 
-# gsplat - MODIFIED: use configurable version (default 1.5.3 for nbv-splat compatibility)
-RUN export TORCH_CUDA_ARCH_LIST="$(echo "$CUDA_ARCHITECTURES" | tr ';' '\n' | awk '$0 > 70 {print substr($0,1,1)"."substr($0,2)}' | tr '\n' ' ' | sed 's/ $//')" && \
-    export MAX_JOBS=4 && \
-    pip install --no-cache-dir gsplat==${GSPLAT_VERSION} --index-url https://docs.gsplat.studio/whl/pt21cu118
-
-# nerfstudio from source
+# nerfstudio from source (install BEFORE gsplat so we can override the version)
 COPY --from=source /tmp/nerfstudio/ /tmp/nerfstudio
 RUN pip install --no-cache-dir /tmp/nerfstudio numpy==1.26.4 && \
     rm -rf /tmp/nerfstudio
+
+# gsplat - MODIFIED: install AFTER nerfstudio to override its default version
+# Use --extra-index-url so PyPI is still available for deps like jaxtyping
+RUN export TORCH_CUDA_ARCH_LIST="$(echo "$CUDA_ARCHITECTURES" | tr ';' '\n' | awk '$0 > 70 {print substr($0,1,1)"."substr($0,2)}' | tr '\n' ' ' | sed 's/ $//')" && \
+    export MAX_JOBS=4 && \
+    pip install --no-cache-dir gsplat==${GSPLAT_VERSION} --extra-index-url https://docs.gsplat.studio/whl/pt21cu118
 
 # === FiGS-SPECIFIC DEPENDENCIES ===
 
 # FiGS misc dependencies (from install-serverside.sh lines 140-149)
 RUN pip install --no-cache-dir \
     albumentations \
-    qpsolvers \
+    "qpsolvers[open_source_solvers]" \
     tabulate \
     cython \
     ipykernel \
@@ -185,7 +191,7 @@ RUN chmod -R go=u /usr/local/lib/python3.10 && \
     chmod -R go=u /build
 
 # === RUNTIME STAGE ===
-FROM nvidia/cuda:${NVIDIA_CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSION} as runtime
+FROM nvidia/cuda:${NVIDIA_CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSION} AS runtime
 ARG CUDA_ARCHITECTURES
 ARG NVIDIA_CUDA_VERSION
 ARG UBUNTU_VERSION
@@ -216,6 +222,7 @@ RUN apt-get update && \
         git \
         liblapack3 \
         libblas3 \
+        libopengl0 \
         && rm -rf /var/lib/apt/lists/*
 
 # Copy build artifacts
@@ -234,24 +241,39 @@ RUN /bin/bash -c 'ns-install-cli --mode install'
 
 WORKDIR /workspace
 
-# Container startup script
-RUN echo '#!/bin/bash\n\
-echo "FiGS Docker Environment"\n\
-echo "========================"\n\
-echo "gsplat version: $(python -c \"import gsplat; print(gsplat.__version__)\" 2>/dev/null || echo \"unknown\")"\n\
-echo "numpy version: $(python -c \"import numpy; print(numpy.__version__)\")"\n\
-echo "torch version: $(python -c \"import torch; print(torch.__version__)\")"\n\
-echo ""\n\
-echo "To install FiGS (first time only):"\n\
-echo "  cd /workspace/FiGS-Standalone && pip install -e . --no-deps"\n\
-echo "  cd /workspace/FiGS-Standalone/gemsplat && pip install -e . --no-deps"\n\
-echo "  ns-install-cli"\n\
-echo ""\n\
-echo "To install coverage_view_selection (nbv-splat):"\n\
-echo "  cd /workspace/coverage_view_selection && pip install -e ."\n\
-echo "  ns-install-cli"\n\
-echo ""\n\
-exec "$@"' > /entrypoint.sh && chmod +x /entrypoint.sh
+# Container startup script and info helper
+RUN cat > /entrypoint.sh << 'ENTRYPOINT_EOF'
+#!/bin/bash
+echo "FiGS Docker Environment"
+echo "========================"
+python -c "import gsplat; print('gsplat version:', gsplat.__version__)" 2>/dev/null || echo "gsplat version: unknown"
+python -c "import numpy; print('numpy version:', numpy.__version__)"
+python -c "import torch; print('torch version:', torch.__version__)"
+echo ""
+echo "To install FiGS (first time only):"
+echo "  cd /workspace/FiGS-Standalone && pip install -e . --no-deps"
+echo "  cd /workspace/FiGS-Standalone/gemsplat && pip install -e . --no-deps"
+echo "  ns-install-cli"
+echo ""
+echo "To install coverage_view_selection (nbv-splat):"
+echo "  cd /workspace/coverage_view_selection && pip install -e ."
+echo "  ns-install-cli"
+echo ""
+exec "$@"
+ENTRYPOINT_EOF
+RUN chmod +x /entrypoint.sh
+
+# Also add figs-info helper
+RUN cat > /usr/local/bin/figs-info << 'INFO_EOF'
+#!/bin/bash
+echo "=== FiGS Environment Info ==="
+python -c "import gsplat; print('gsplat:', gsplat.__version__)" 2>/dev/null || echo "gsplat: not installed"
+python -c "import numpy; print('numpy:', numpy.__version__)"
+python -c "import torch; print('torch:', torch.__version__, '| CUDA:', torch.cuda.is_available())"
+python -c "import acados_template; print('acados: installed')" 2>/dev/null || echo "acados: not installed"
+which ns-train >/dev/null && echo "nerfstudio: installed" || echo "nerfstudio: not installed"
+INFO_EOF
+RUN chmod +x /usr/local/bin/figs-info
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/bin/bash", "-l"]
