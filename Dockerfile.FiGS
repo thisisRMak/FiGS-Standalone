@@ -238,6 +238,10 @@ COPY --from=builder /opt/acados/ /opt/acados/
 ENV ACADOS_SOURCE_DIR=/opt/acados
 ENV LD_LIBRARY_PATH=/opt/acados/lib:${LD_LIBRARY_PATH}
 
+# Install tera renderer for acados template generation
+ADD https://github.com/acados/tera_renderer/releases/download/v0.2.0/t_renderer-v0.2.0-linux-amd64 /opt/acados/bin/t_renderer
+RUN chmod +x /opt/acados/bin/t_renderer
+
 # Install nerfstudio CLI
 RUN /bin/bash -c 'ns-install-cli --mode install'
 
@@ -252,14 +256,9 @@ python -c "import gsplat; print('gsplat version:', gsplat.__version__)" 2>/dev/n
 python -c "import numpy; print('numpy version:', numpy.__version__)"
 python -c "import torch; print('torch version:', torch.__version__)"
 echo ""
-echo "To install FiGS (first time only):"
-echo "  cd /workspace/FiGS-Standalone && pip install -e . --no-deps"
-echo "  cd /workspace/FiGS-Standalone/gemsplat && pip install -e . --no-deps"
-echo "  ns-install-cli"
-echo ""
-echo "To install coverage_view_selection (nbv-splat):"
-echo "  cd /workspace/coverage_view_selection && pip install -e ."
-echo "  ns-install-cli"
+echo "Installed packages:"
+python -c "import figs; print('  figs: installed')" 2>/dev/null || echo "  figs: not installed"
+python -c "import gemsplat; print('  gemsplat: installed')" 2>/dev/null || echo "  gemsplat: not installed"
 echo ""
 exec "$@"
 ENTRYPOINT_EOF
