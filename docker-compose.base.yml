@@ -47,5 +47,6 @@ services:
         runuser -u $$USERNAME -- python -m pip install -e /workspace/FiGS-Standalone/gemsplat --no-deps -q || { echo 'FATAL: failed to install gemsplat'; exit 1; }
         # Verify all packages are importable
         runuser -u $$USERNAME -- python -c 'import figs, gemsplat' || { echo 'FATAL: package import check failed'; exit 1; }
+        runuser -u $$USERNAME -- figs-info
         exec runuser -u $$USERNAME -- bash -l
       "

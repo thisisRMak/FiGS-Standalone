@@ -269,16 +269,6 @@ WORKDIR /workspace
 # Container startup script and info helper
 RUN cat > /entrypoint.sh << 'ENTRYPOINT_EOF'
 #!/bin/bash
-echo "FiGS Docker Environment"
-echo "========================"
-python -c "import gsplat; print('gsplat version:', gsplat.__version__)" 2>/dev/null || echo "gsplat version: unknown"
-python -c "import numpy; print('numpy version:', numpy.__version__)"
-python -c "import torch; print('torch version:', torch.__version__)"
-echo ""
-echo "Installed packages:"
-python -c "import figs; print('  figs: installed')" 2>/dev/null || echo "  figs: not installed"
-python -c "import gemsplat; print('  gemsplat: installed')" 2>/dev/null || echo "  gemsplat: not installed"
-echo ""
 exec "$@"
 ENTRYPOINT_EOF
 RUN chmod +x /entrypoint.sh
@@ -287,6 +277,8 @@ RUN chmod +x /entrypoint.sh
 RUN cat > /usr/local/bin/figs-info << 'INFO_EOF'
 #!/bin/bash
 echo "=== FiGS Environment Info ==="
+python -c "import figs; print('figs: installed')" 2>/dev/null || echo "figs: not installed"
+python -c "import gemsplat; print('gemsplat: installed')" 2>/dev/null || echo "gemsplat: not installed"
 python -c "import gsplat; print('gsplat:', gsplat.__version__)" 2>/dev/null || echo "gsplat: not installed"
 python -c "import numpy; print('numpy:', numpy.__version__)"
 python -c "import torch; print('torch:', torch.__version__, '| CUDA:', torch.cuda.is_available())"

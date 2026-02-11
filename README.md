@@ -13,7 +13,7 @@ git clone https://github.com/madang6/FiGS-Standalone.git
 cd FiGS-Standalone
 git submodule update --init gemsplat
 
-# Detect your GPU's compute capability and build
+# Detect your GPU's compute capability and build (may need to be run as sudo depending on Docker install)
 CUDA_ARCHITECTURES=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1 | tr -d '.') docker compose build
 
 docker compose run --rm figs      # starts a shell with everything ready
@@ -106,7 +106,5 @@ python figs_generate_3dgs_example.py
 Additional notebooks:
 ```bash
 python figs_capture_calibration.py
-python figs_flightsim_example.py
+python figs_simulate_flight_example.py
 ```
-
-### Known Issues (and some fixes)
