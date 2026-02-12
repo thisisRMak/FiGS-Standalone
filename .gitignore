@@ -11,6 +11,8 @@
 3dgs/**
 3dgs
 notebooks/**
+!notebooks/figs_simulate_flight_example.py
+!notebooks/figs_generate_3dgs_example.py
 src/scripts/**
 
 !.gitignore
@@ -30,3 +32,6 @@ configs/course/*
 *.sh
 !install-serverside.sh
 !install.sh
+!install-figs.sh
+**/splatfacto/
+**/gemsplat/
