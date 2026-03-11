@@ -5,6 +5,7 @@ Outputs:
     {output-dir}/video.mp4         — rendered video at control rate
     {output-dir}/images/*.png      — individual frames (RGB)
     {output-dir}/transforms.json   — GT poses in nerfstudio format
+    {output-dir}/tXUd.npy          — (15, N) trajectory [t; pos; vel; quat; uf; wx; wy; wz]
 
 Usage:
     python figs_simulate_flight_CLI.py \
@@ -173,6 +174,21 @@ def main():
         print(f"Warning: could not save NED point cloud: {e}")
 
     # ------------------------------------------------------------------
+    # Save tXUd trajectory (for IMU synthesis / OpenVINS)
+    # ------------------------------------------------------------------
+    # Build tXUd from simulation outputs: [t; pos; vel; quat; uf; wx; wy; wz]
+    # Uro is (4, Nctl) while Tro/Xro have Nctl+1 columns; trim to Nctl
+    Nctl = Uro.shape[1]
+    tXUd = np.vstack([
+        Tro[:Nctl].reshape(1, -1),   # (1, Nctl) time
+        Xro[:, :Nctl],                # (10, Nctl) state [pos, vel, quat]
+        Uro,                          # (4, Nctl) controls [uf, wx, wy, wz]
+    ])  # (15, Nctl)
+    tXUd_path = output_dir / "tXUd.npy"
+    np.save(tXUd_path, tXUd)
+    print(f"Saved trajectory: {tXUd_path} (shape {tXUd.shape})")
+
+    # ------------------------------------------------------------------
     # Clean up
     # ------------------------------------------------------------------
     del ctl  # Release ACADOS resources
@@ -182,6 +198,7 @@ def main():
     print(f"  Video:      {output_dir / 'video.mp4'}")
     print(f"  Frames:     {output_dir / 'images/'} ({num_frames} PNGs)")
     print(f"  GT poses:   {output_dir / 'transforms.json'}")
+    print(f"  Trajectory:  {output_dir / 'tXUd.npy'}")
     print(f"  Point cloud: {output_dir / 'sparse_pc_ned.ply'}")
     print("=" * 60)
 
